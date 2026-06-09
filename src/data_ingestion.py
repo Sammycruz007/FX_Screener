@@ -1,65 +1,65 @@
 # src/data_ingestion.py
-import os
 import logging
-from datetime import datetime, timedelta
+import time
+import yfinance as yf
 import pandas as pd
-from dotenv import load_dotenv
-from alpaca.data.historical.forex import ForexHistoricalDataClient
-from alpaca.data.requests import ForexBarsRequest
-from alpaca.data.timeframe import TimeFrame
 
-# Configure structured logging for the data module
 logger = logging.getLogger("SystemLogger.DataIngestion")
 
-class AlpacaDataIngestor:
-    """Handles secure connection and raw daily bar data ingestion from Alpaca."""
-    
-    def __init__(self):
-        load_dotenv()
-        self.api_key = os.getenv("ALPACA_API_KEY")
-        self.secret_key = os.getenv("ALPACA_SECRET_KEY")
-        
-        if not self.api_key or not self.secret_key:
-            logger.critical("Alpaca API Credentials missing from system environment (.env)!")
-            raise ValueError("Credentials missing. Ensure ALPACA_API_KEY and ALPACA_SECRET_KEY are set.")
-        
-        try:
-            self.client = ForexHistoricalDataClient(api_key=self.api_key, secret_key=self.secret_key)
-            logger.info("Successfully authenticated and initialized Alpaca Forex client.")
-        except Exception as e:
-            logger.exception("Failed to initialize Alpaca historical client wrapper:")
-            raise
+class YFinanceDataIngestor:
+    def __init__(self, pairs: list, period: str = "5y", interval: str = "1d"):
+        self.pairs = pairs
+        self.period = period
+        self.interval = interval
 
-    def fetch_daily_candles(self, pair: str, days_back: int = 1000) -> pd.DataFrame:
-        """
-        Retrieves historical D1 candlestick arrays for a targeted currency pair.
-        Ex: pair='EUR/USD'
-        """
-        logger.info(f"Initiating historical fetch for {pair} looking back {days_back} days...")
+    def fetch_data(self) -> dict:
+        logger.info(f"Initiating yfinance data download for pairs: {self.pairs}")
+        data_dict = {}
         
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days_back)
-        
-        try:
-            request_params = ForexBarsRequest(
-                symbol_or_symbols=pair,
-                timeframe=TimeFrame.Day,
-                start=start_date,
-                end=end_date
-            )
+        for pair in self.pairs:
+            yf_symbol = pair.replace("/", "") + "=X"
+            df = pd.DataFrame()
             
-            # Fetch raw structural objects from the endpoint
-            bars = self.client.get_forex_bars(request_params)
+            # --- PRODUCTION RETRY ENGINE ---
+            max_retries = 3
+            backoff_seconds = 2
             
-            if not bars or not bars.df.empty:
-                df = bars.df.reset_index()
-                logger.info(f"Ingestion successful for {pair}. Retrieved {len(df)} total records.")
-                return df
-            else:
-                logger.warning(f"API request completed but returned an empty dataset for {pair}!")
-                return pd.DataFrame()
+            for attempt in range(1, max_retries + 1):
+                try:
+                    logger.info(f"Downloading {yf_symbol} (Attempt {attempt}/{max_retries})...")
+                    ticker = yf.Ticker(yf_symbol)
+                    df = ticker.history(period=self.period, interval=self.interval)
+                    
+                    if not df.empty:
+                        break # Success! Break out of the retry loop
+                        
+                except Exception as e:
+                    logger.warning(f"Attempt {attempt} failed due to network hiccup: {str(e)}")
                 
-        except Exception as e:
-            logger.error(f"Failed to fetch market data from Alpaca endpoints for target {pair}: {str(e)}")
-            logger.exception(e)
-            return pd.DataFrame()
+                if attempt < max_retries:
+                    time.sleep(backoff_seconds * attempt) # Wait longer with each failure
+            # --------------------------------
+            
+            if df.empty:
+                logger.error(f"No data returned for {yf_symbol} after {max_retries} attempts. API rate limit breached.")
+                continue
+                
+            # Standardize and clean columns
+            df = df.reset_index()
+            df.columns = [col.lower() for col in df.columns]
+            
+            if 'date' in df.columns:
+                df['date'] = pd.to_datetime(df['date']).dt.tz_localize(None)
+            
+            # Defensive Slice: Drop today's incomplete candle if it's still printing
+            today_str = pd.Timestamp.now().strftime('%Y-%m-%d')
+            df['date_str'] = df['date'].dt.strftime('%Y-%m-%d')
+            if df.iloc[-1]['date_str'] == today_str:
+                logger.info("Detected live, unclosed daily candle row. Slicing it off safely.")
+                df = df.iloc[:-1].reset_index(drop=True)
+            df = df.drop(columns=['date_str'])
+            
+            data_dict[pair] = df
+            logger.info(f"Successfully processed {len(df)} finalized bars for {pair}.")
+                
+        return data_dict
