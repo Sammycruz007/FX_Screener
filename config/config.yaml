@@ -1,0 +1,16 @@
+# config/config.yaml
+project: "fx_mean_reversion_hitl"
+version: "1.0.0"
+
+data:
+  pairs:
+    - "EUR/USD"
+    - "GBP/USD"
+    - "AUD/USD"
+    - "USD/JPY"
+  days_back: 1000
+
+strategy:
+  lrc_window: 200
+  atr_window: 14
+  max_holding_days: 20
