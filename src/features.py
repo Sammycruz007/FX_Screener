@@ -1,80 +1,88 @@
 # src/features.py
-import logging
 import pandas as pd
 import numpy as np
 
-logger = logging.getLogger("SystemLogger.Features")
-
 def compute_linear_regression_channel(df: pd.DataFrame, window: int = 200) -> pd.DataFrame:
     """
-    Computes a strict 200-candle rolling linear regression channel center line and slope.
-    Bands are generated using a localized volatility multiplier to match visual charting.
+    Matches LINREG by DGT exactly.
+    Uses 1-to-200 indexing and Standard Error of the Estimate with 198 Degrees of Freedom.
     """
-    logger.info(f"Computing rolling Linear Regression Channels using a strict {window}-period frame...")
-    
     length = len(df)
     lrc_center = np.full(length, np.nan)
     lrc_slope = np.full(length, np.nan)
     
-    x = np.arange(window)
-    x_mean = x.mean()
-    x_dev = x - x_mean
-    x_var = (x_dev ** 2).sum()
+    lrc_p1 = np.full(length, np.nan)
+    lrc_p2 = np.full(length, np.nan)
+    lrc_p3 = np.full(length, np.nan)
+    
+    lrc_n1 = np.full(length, np.nan)
+    lrc_n2 = np.full(length, np.nan)
+    lrc_n3 = np.full(length, np.nan)
+    
+    # 1-Based Data Indexing (1 to 200)
+    x = np.arange(1, window + 1)
+    x_sum = x.sum()
+    x_sq_sum = (x ** 2).sum()
+    denominator = (window * x_sq_sum) - (x_sum ** 2)
 
     for i in range(window - 1, length):
-        # Strict 200-candle selection: newest candle is always the 200th item
         y_window = df['close'].values[i - window + 1 : i + 1]
-        y_mean = y_window.mean()
+        y_sum = y_window.sum()
+        xy_sum = np.dot(x, y_window)
         
-        slope = np.dot(x_dev, y_window - y_mean) / x_var
-        intercept = y_mean - slope * x_mean
+        # OLS Slope (m) & Intercept (b)
+        m = (window * xy_sum - x_sum * y_sum) / denominator
+        b = (y_sum - m * x_sum) / window
         
-        lrc_center[i] = slope * (window - 1) + intercept
-        lrc_slope[i] = slope
+        # Plotted center baseline value at current candle index (x = 200)
+        current_center = (m * window) + b
+        lrc_center[i] = current_center
+        lrc_slope[i] = m
+        
+        # Standard Error of the Estimate (SE)
+        fitted_line = (m * x) + b
+        residuals = y_window - fitted_line
+        sum_squared_residuals = (residuals ** 2).sum()
+        
+        # Degrees of Freedom correction (n - 2 = 198)
+        se = np.sqrt(sum_squared_residuals / (window - 2))
+        
+        # Plotted Parallel Channel Bands
+        lrc_p1[i] = current_center + (1 * se)
+        lrc_p2[i] = current_center + (2 * se)
+        lrc_p3[i] = current_center + (3 * se)
+        
+        lrc_n1[i] = current_center - (1 * se)
+        lrc_n2[i] = current_center - (2 * se)
+        lrc_n3[i] = current_center - (3 * se)
 
     df['lrc_center'] = lrc_center
     df['lrc_slope'] = lrc_slope
-    
-    # LOCALIZED CALIBRATION: Use a rolling short-term volatility window to keep bands tight to price action
-    # This matches real-world linear regression channels like LuxAlgo
-    rolling_volatility = df['close'].rolling(20).std()
-    
-    df['lrc_p1'] = df['lrc_center'] + (1.0 * rolling_volatility)
-    df['lrc_p3'] = df['lrc_center'] + (2.5 * rolling_volatility)
+    df['lrc_p1'] = lrc_p1
+    df['lrc_p2'] = lrc_p2
+    df['lrc_p3'] = lrc_p3
+    df['lrc_n1'] = lrc_n1
+    df['lrc_n2'] = lrc_n2
+    df['lrc_n3'] = lrc_n3
     
     return df
 
 def identify_candlestick_patterns(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Scans the data for Forex-optimized Bearish Engulfing and Evening Star formations.
-    """
-    logger.info("Scanning price action for Forex-calibrated candlestick formations...")
+    """Detects entry candlestick triggers."""
+    df['is_bearish_engulfing'] = (df['close'].shift(1) > df['open'].shift(1)) & \
+                                 (df['close'] < df['open']) & \
+                                 (df['open'] >= df['close'].shift(1)) & \
+                                 (df['close'] <= df['open'].shift(1))
+                                 
+    df['is_bullish_engulfing'] = (df['close'].shift(1) < df['open'].shift(1)) & \
+                                 (df['close'] > df['open']) & \
+                                 (df['open'] <= df['close'].shift(1)) & \
+                                 (df['close'] >= df['open'].shift(1))
     
-    df['is_bearish_engulfing'] = False
-    df['is_evening_star'] = False
+    body = abs(df['close'] - df['open'])
+    upper_wick = df['high'] - df[['open', 'close']].max(axis=1)
+    lower_wick = df[['open', 'close']].min(axis=1) - df['low']
     
-    for i in range(3, len(df)):
-        c0_open, c0_close, c0_high = df.loc[i, 'open'], df.loc[i, 'close'], df.loc[i, 'high']
-        c1_open, c1_close, c1_high = df.loc[i-1, 'open'], df.loc[i-1, 'close'], df.loc[i-1, 'high']
-        c2_open, c2_close, c2_high = df.loc[i-2, 'open'], df.loc[i-2, 'close'], df.loc[i-2, 'high']
-        
-        c0_body = abs(c0_close - c0_open)
-        c1_body = abs(c1_close - c1_open)
-        c2_body = abs(c2_close - c2_open)
-        
-        # Bearish Engulfing
-        c1_is_green = c1_close > c1_open
-        c0_is_red = c0_close < c0_open
-        if c1_is_green and c0_is_red and (c0_body > c1_body) and (c0_close < c1_open):
-            df.loc[i, 'is_bearish_engulfing'] = True
-                
-        # Evening Star
-        c2_is_green = c2_close > c2_open
-        if c2_is_green and c0_is_red:
-            is_star_body = c1_body < (c2_body * 0.5)
-            is_star_peak = (c1_high > c2_high) and (c1_high >= c0_high)
-            closes_deep = c0_close <= (c2_open + c2_close) / 2
-            if is_star_body and is_star_peak and closes_deep:
-                df.loc[i, 'is_evening_star'] = True
-                
+    df['is_shooting_star'] = (upper_wick >= 2 * body) & (lower_wick <= body * 0.5)
+    df['is_hammer'] = (lower_wick >= 2 * body) & (upper_wick <= body * 0.5)
     return df

@@ -3,7 +3,7 @@ project: "fx_mean_reversion_hitl"
 version: "1.0.0"
 
 data:
-  pairs: ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD', 'USD/CHF', 'USD/CAD', 'AUD/CAD', 'EUR/CAD', 'GBP/CAD', 'NZD/CAD', 'AUD/CHF', 'EUR/CHF', 'GBP/CHF', 'NZD/CHF', 'CAD/CHF', 'AUD/JPY', 'EUR/JPY', 'GBP/JPY', 'NZD/JPY', 'CAD/JPY', 'EUR/AUD', 'GBP/AUD', 'EUR/NZD', 'GBP/NZD', 'AUD/NZD',]
+  pairs: ['AUD/USD', 'GBP/USD', 'USD/JPY', 'EUR/USD', 'USD/CHF', 'USD/CAD', 'AUD/CAD', 'EUR/CAD', 'GBP/CAD', 'NZD/CAD', 'AUD/CHF', 'EUR/CHF', 'GBP/CHF', 'NZD/CHF', 'CAD/CHF', 'AUD/JPY', 'EUR/JPY', 'GBP/JPY', 'NZD/JPY', 'CAD/JPY', 'EUR/AUD', 'GBP/AUD', 'EUR/NZD', 'GBP/NZD', 'AUD/NZD']
   period: "5y"
   interval: "1d"
 
