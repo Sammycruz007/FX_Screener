@@ -1,0 +1,27 @@
+name: MLOps Container Validation
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  validate-environment:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository Source Code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Test Build Production Image
+      run: |
+        docker build -t fx-screener:test .
+        echo "✅ Container environment built successfully in the cloud!"
