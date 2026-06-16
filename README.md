@@ -144,12 +144,9 @@ The execution environment is completely isolated using a multi-stage Dockerfile 
 ### Orchestration Interface
 The `run_pipeline.py` entry point accepts dynamic command-line arguments via argparse, allowing workflow orchestrators (such as Apache Airflow, Prefect, or cron daemons) to dynamically override the default parameters or targets:
 
-```bash
-python run_pipeline.py --interval 1h --config path/to/custom_config.yaml
-
-
 
 ### 8. Project Structure & Environment
+
 Directory Architecture
 FX screener/
 ├── config/
