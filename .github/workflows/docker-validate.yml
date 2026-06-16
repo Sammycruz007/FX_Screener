@@ -9,6 +9,10 @@ on:
     branches:
       - main
       - master
+  schedule:
+    # Runs daily at 23:00 UTC (12:00 AM GMT+1) Sunday through Thursday
+    - cron: '0 23 * * 0-4'
+  workflow_dispatch: # Keeps a manual trigger button available in your UI
 
 jobs:
   validate-environment:
