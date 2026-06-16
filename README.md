@@ -147,6 +147,9 @@ The `run_pipeline.py` entry point accepts dynamic command-line arguments via arg
 
 ### 8. Project Structure & Environment
 
+```bash
+python run_pipeline.py --interval 1h --config path/to/custom_config.yaml
+
 Directory Architecture
 FX screener/
 ├── config/
